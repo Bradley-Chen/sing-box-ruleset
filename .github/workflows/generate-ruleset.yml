@@ -1,0 +1,53 @@
+name: Generate sing-box Rule Set
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs daily at midnight UTC
+  workflow_dispatch: # Allows manual execution from the GitHub Actions UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to push or publish releases
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Download Latest IPinfo Database
+        run: |
+          curl -L "https://ipinfo.io/data/ipinfo_lite.json.gz?token=${{ secrets.IPINFO_TOKEN }}" -o ipinfo_lite.json.gz
+
+      - name: Run Parser
+        run: |
+          python parse.py ipinfo_lite.json.gz geoip-cn.json
+
+      - name: Install sing-box & Compile Rule-Set
+        run: |
+          go install github.com/sagernet/sing-box/cmd/sing-box@latest
+          # Add GOPATH bin to PATH to run sing-box
+          export PATH=$PATH:$(go env GOPATH)/bin
+          sing-box rule-set compile geoip-cn.json
+
+      - name: Release and Publish Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            geoip-cn.json
+            geoip-cn.srs
+          tag_name: latest
+          name: "Latest Custom GeoIP CN Rule Set"
+          body: |
+            Automatically compiled from latest ipinfo database.
+            - `geoip-cn.json`: Source Format rule-set
+            - `geoip-cn.srs`: Compiled binary rule-set for direct use in sing-box
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
